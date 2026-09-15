@@ -1,0 +1,5 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#EDECEC" d="M161 120 351 120 351 200 241 200 241 392 161 392Z"/>
+  <path fill="#EDECEC" opacity="0.55" d="M351 120 431 200 431 392 351 392 351 200Z"/>
+  <path fill="#EDECEC" opacity="0.35" d="M161 392 241 392 351 392 431 392 351 472 161 472 81 392Z"/>
+</svg>

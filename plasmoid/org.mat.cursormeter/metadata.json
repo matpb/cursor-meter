@@ -1,0 +1,21 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Id": "org.mat.cursormeter",
+        "Name": "Cursor Meter",
+        "Description": "Live Cursor plan usage bars (Auto + Composer and named models) for your KDE panel",
+        "Icon": "speedometer",
+        "Authors": [
+            {
+                "Name": "Mathieu-Philippe Bourgeois",
+                "Email": ""
+            }
+        ],
+        "Website": "https://github.com/matpb/cursor-meter",
+        "Category": "System Information",
+        "License": "MIT",
+        "Version": "1.0.0",
+        "EnabledByDefault": true
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

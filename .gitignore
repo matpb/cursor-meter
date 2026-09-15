@@ -1,0 +1,12 @@
+# Nothing sensitive is generated in-tree, but keep the repo tidy.
+*.tmp
+*.bak
+*.log
+*~
+.DS_Store
+
+# Cursor Meter stores no secrets in-tree. It only ever READS:
+#   ~/.config/cursor/auth.json                 (token from cursor-agent login)
+#   ~/.config/Cursor/.../state.vscdb           (IDE token fallback)
+# and writes a usage snapshot (no token) to:
+#   ~/.config/cursor-meter/last.json
