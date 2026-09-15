@@ -8,14 +8,14 @@
 # FALLBACK: the last successful live read cached at ~/.config/cursor-meter/last.json.
 #
 # Output: {"ok":true,"source":"live"|"cache","age":N,"plan":"Pro","cycle_sec":S,"total_pct":P,
-#          "five":{"pct":P,"reset_in":S,"fresh":B},"seven":{...}}
-#   `five` = Auto + Composer bucket, `seven` = named-model API bucket (same billing cycle).
+#          "five":{...},"seven":{...},"grok":{...}|null}
+#   `five` = monthly Models pool, `seven` = monthly Other Models, `grok` = Grok Bot weekly.
 #
 # Optional environment overrides (none are required):
 #   CURSOR_CONFIG_HOME     CLI auth dir (default ~/.config/cursor)
 #   CURSOR_STATE_DB        IDE state DB (default ~/.config/Cursor/User/globalStorage/state.vscdb)
 #   CURSOR_METER_CACHE     Snapshot path (default ~/.config/cursor-meter/last.json)
-#   CURSOR_METER_USAGE_JSON / CURSOR_METER_PLAN_JSON   Test fixtures
+#   CURSOR_METER_USAGE_JSON / CURSOR_METER_PLAN_JSON / CURSOR_METER_SAND_JSON   Test fixtures
 #   CURSOR_METER_DEBUG=1   Print diagnostics to stderr
 
 set -f
@@ -27,6 +27,7 @@ state_db="${CURSOR_STATE_DB:-${XDG_CONFIG_HOME:-$HOME/.config}/Cursor/User/globa
 cache="${CURSOR_METER_CACHE:-${XDG_CONFIG_HOME:-$HOME/.config}/cursor-meter/last.json}"
 api_base="${CURSOR_API_BASE:-https://api2.cursor.sh}"
 usage_url="$api_base/aiserver.v1.DashboardService/GetCurrentPeriodUsage"
+sand_url="$api_base/aiserver.v1.DashboardService/GetSandUsageStatus"
 plan_url="$api_base/aiserver.v1.DashboardService/GetPlanInfo"
 legacy_url="$api_base/auth/usage"
 now=$(date +%s)
@@ -58,7 +59,16 @@ read_token() {
 normalize_dashboard() {
     local plan="$1"
     jq -e -c --argjson now "$now" --arg plan "$plan" '
-      def pct(v): if v == null then 0 else ((v * 100 + 0.5) | floor) end;
+      # *PercentUsed floats are internal; the web UI reads *DisplayMessage instead.
+      def parse_display(msg):
+        if msg == null or msg == "" then null
+        elif msg | test("hit your usage limit") then 100
+        else (try (msg | capture("You.?ve used (?<n>[0-9]+)%").n | tonumber) catch null)
+        end;
+      def spend_pct(spend; limit):
+        if limit == null or limit <= 0 then null
+        else ((spend * 100 / limit) + 0.5 | floor)
+        end;
       def fresh(p; ri; cycle): (p == 0) and (ri >= (cycle - 120));
       (.billingCycleStart // 0) as $bs | (.billingCycleEnd // 0) as $be
       | if (($be | tonumber) <= 0) then error("no billing cycle") else . end
@@ -68,15 +78,44 @@ normalize_dashboard() {
       | (if $ri0 < 0 then 0 else $ri0 end) as $ri
       | ($end - $start) as $cycle
       | (.planUsage // {}) as $pu
-      | pct($pu.autoPercentUsed) as $auto
-      | pct($pu.apiPercentUsed) as $api
-      | pct($pu.totalPercentUsed) as $total
+      | parse_display(.autoModelSelectedDisplayMessage) as $autoMsg
+      | parse_display(.namedModelSelectedDisplayMessage) as $apiMsg
+      | parse_display(.displayMessage) as $totalMsg
+      | spend_pct($pu.includedSpend; $pu.limit) as $totalSpend
+      | (if $autoMsg != null then $autoMsg else 0 end) as $auto
+      | (if $apiMsg != null then $apiMsg else 0 end) as $api
+      | (if $totalMsg != null then $totalMsg
+         elif $totalSpend != null then $totalSpend else 0 end) as $total
       | { ok: true, source: "live", age: 0,
           plan: (if $plan == "" then "Cursor" else $plan end),
           cycle_sec: $cycle, total_pct: $total,
           five:  { pct: $auto, reset_in: $ri, fresh: fresh($auto; $ri; $cycle) },
           seven: { pct: $api,  reset_in: $ri, fresh: fresh($api; $ri; $cycle) } }
     '
+}
+
+attach_grok() {
+    local dashboard="$1" sand="${2:-}"
+    if [ -z "$sand" ]; then
+        printf '%s' "$dashboard" | jq -c '. + {grok: null}'
+        return
+    fi
+    jq -n -e -c --argjson now "$now" --argjson dashboard "$dashboard" --argjson sand "$sand" '
+      def toepoch: (sub("\\.[0-9]+"; "") | sub("Z$"; "Z") | fromdateiso8601);
+      def fresh(p; ri; cycle): (p == 0) and (ri >= (cycle - 120));
+      $dashboard
+      | .grok =
+          if ($sand.hasNonZeroIncludedLimit == false) or ($sand.usagePercent == null) then null
+          else
+            ($sand.nextResetTimestampUtc | toepoch) as $end
+            | ($sand.currentPeriodStart | toepoch) as $start
+            | ($end - $now) as $ri0
+            | (if $ri0 < 0 then 0 else $ri0 end) as $ri
+            | ($end - $start) as $cycle
+            | (($sand.usagePercent + 0.5) | floor) as $pct
+            | { pct: $pct, reset_in: $ri, fresh: fresh($pct; $ri; $cycle), week_sec: $cycle }
+          end
+    ' 2>/dev/null || printf '%s' "$dashboard" | jq -c '. + {grok: null}'
 }
 
 normalize_legacy() {
@@ -104,12 +143,15 @@ emit_cache() {
     jq -e -c --argjson now "$now" '
       ($now - (.ts // $now)) as $age
       | if (.ok != true) then error("bad cache") else . end
-      | .five.reset_in  as $f | .seven.reset_in as $s
+      | .five.reset_in as $f | .seven.reset_in as $s | (.grok // null) as $grok
+      | (if $grok == null then null else $grok.reset_in end) as $g
       | { ok: true, source: "cache", age: $age,
           plan: (.plan // "Cursor"), cycle_sec: (.cycle_sec // 2592000),
           total_pct: (.total_pct // .five.pct // 0),
           five:  (.five  + { reset_in: (if $f == null then null elif ($f - $age) < 0 then 0 else ($f - $age) end) }),
-          seven: (.seven + { reset_in: (if $s == null then null elif ($s - $age) < 0 then 0 else ($s - $age) end) }) }
+          seven: (.seven + { reset_in: (if $s == null then null elif ($s - $age) < 0 then 0 else ($s - $age) end) }),
+          grok:  (if $grok == null then null
+                   else $grok + { reset_in: (if $g == null then null elif ($g - $age) < 0 then 0 else ($g - $age) end) } end) }
     ' "$cache" 2>/dev/null || printf '{"ok":false,"reason":"parse-error"}\n'
 }
 
@@ -144,10 +186,28 @@ plan_from_live() {
     [ -n "$p" ] && printf '%s' "$p"
 }
 
+fetch_sand() {
+    local tok="$1" resp=""
+    if [ -n "${CURSOR_METER_SAND_JSON:-}" ]; then
+        [ -s "$CURSOR_METER_SAND_JSON" ] && cat "$CURSOR_METER_SAND_JSON"
+        return 0
+    fi
+    [ -n "$tok" ] || return 0
+    resp=$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | timeout 10 curl -sS --fail --max-time 10 \
+        -K - \
+        -H "Accept: application/json" \
+        -H "Content-Type: application/json" \
+        -H "Connect-Protocol-Version: 1" \
+        -H "User-Agent: $UA" \
+        -d '{}' \
+        "$sand_url" 2>/dev/null) || { log "sand usage endpoint failed"; return 0; }
+    [ -n "$resp" ] && printf '%s' "$resp"
+}
+
 try_live() {
     command -v jq >/dev/null 2>&1 || { log "missing jq"; return 1; }
 
-    local tok="" usage="" plan="" resp
+    local tok="" usage="" plan="" resp sand="" out=""
 
     if [ -n "${CURSOR_METER_USAGE_JSON:-}" ]; then
         [ -s "$CURSOR_METER_USAGE_JSON" ] || { log "usage fixture missing"; return 1; }
@@ -179,8 +239,10 @@ try_live() {
     plan="${plan:-Cursor}"
 
     if printf '%s' "$usage" | jq -e '.planUsage != null' >/dev/null 2>&1; then
-        printf '%s' "$usage" | normalize_dashboard "$plan" 2>/dev/null \
+        out=$(printf '%s' "$usage" | normalize_dashboard "$plan" 2>/dev/null) \
             || { log "could not parse dashboard response"; return 1; }
+        sand=$(fetch_sand "$tok")
+        attach_grok "$out" "$sand"
         return 0
     fi
 

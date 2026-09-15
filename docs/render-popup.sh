@@ -12,6 +12,9 @@ auto=$(printf '%s' "$data" | jq -r '.five.pct // 0')
 api=$(printf '%s' "$data" | jq -r '.seven.pct // 0')
 auto_reset=$(printf '%s' "$data" | jq -r '.five.reset_in // 0')
 api_reset=$(printf '%s' "$data" | jq -r '.seven.reset_in // 0')
+grok=$(printf '%s' "$data" | jq -r '.grok.pct // empty')
+grok_reset=$(printf '%s' "$data" | jq -r '.grok.reset_in // 0')
+grok_cycle=$(printf '%s' "$data" | jq -r '.grok.week_sec // 604800')
 cycle=$(printf '%s' "$data" | jq -r '.cycle_sec // 2592000')
 
 fmt() {
@@ -27,6 +30,13 @@ auto_elapsed=$(( cycle - auto_reset ))
 api_elapsed=$(( cycle - api_reset ))
 auto_tp=$(( auto_elapsed * 100 / cycle ))
 api_tp=$(( api_elapsed * 100 / cycle ))
+grok_tp=0
+grok_block=""
+if [ -n "$grok" ]; then
+  grok_elapsed=$(( grok_cycle - grok_reset ))
+  grok_tp=$(( grok_elapsed * 100 / grok_cycle ))
+  grok_block="<div class=\"block grok\"><div class=\"row\"><span class=\"name\">Grok Bot (weekly)</span><span class=\"pct\">${grok}%</span></div><div class=\"track\"><div class=\"fill\"></div><div class=\"tick\"></div></div><div class=\"detail\">resets in $(fmt "$grok_reset") · ${grok_tp}% through week · on pace</div></div>"
+fi
 
 html=$(mktemp --suffix=.html)
 cat > "$html" <<EOF
@@ -46,18 +56,24 @@ body{margin:0;background:#1a1b1e;font:14px system-ui,sans-serif;color:#e8e8ea}
 .api .fill{width:${api}%;background:linear-gradient(90deg,#9bdc8a,#5fbf4f)}
 .api .pct{color:#5fbf4f}
 .api .tick{left:${api_tp}%}
+.grok .fill{width:${grok:-0}%;background:linear-gradient(90deg,#8ab4ff,#5f8fff)}
+.grok .pct{color:#5f8fff}
+.grok .tick{left:${grok_tp}%}
 .foot{opacity:.45;font-size:11px;text-align:right;margin-top:12px}
 </style></head><body><div class="card">
 <div class="hdr"><div style="width:28px;height:28px;background:#444;border-radius:6px"></div>
-<div><div class="title">Cursor</div><div class="sub">included usage · ${plan} · total ${total}%</div></div></div>
-<div class="block"><div class="row"><span class="name">Auto + Composer</span><span class="pct">${auto}%</span></div>
+<div><div class="title">Cursor</div><div class="sub">included usage · ${plan} · allowance ${total}%</div></div></div>
+<div class="block"><div class="row"><span class="name">Cursor, Grok and Composer</span><span class="pct">${auto}%</span></div>
 <div class="track"><div class="fill"></div><div class="tick"></div></div>
 <div class="detail">resets in $(fmt "$auto_reset") · ${auto_tp}% through cycle · on pace</div></div>
-<div class="block api"><div class="row"><span class="name">Named models</span><span class="pct">${api}%</span></div>
+<div class="block api"><div class="row"><span class="name">Other models</span><span class="pct">${api}%</span></div>
 <div class="track"><div class="fill"></div><div class="tick"></div></div>
 <div class="detail">resets in $(fmt "$api_reset") · ${api_tp}% through cycle · comfortable</div></div>
+${grok_block}
 <div class="foot">live · account-wide Cursor</div></div></body></html>
 EOF
-google-chrome-stable --headless --disable-gpu --window-size=400,420 --screenshot="$OUT" "file://$html" 2>/dev/null
+h=420
+[ -n "$grok" ] && h=520
+google-chrome-stable --headless --disable-gpu --window-size=400,$h --screenshot="$OUT" "file://$html" 2>/dev/null
 rm -f "$html"
 [ -s "$OUT" ] && echo "wrote $OUT" || exit 1

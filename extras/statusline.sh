@@ -6,6 +6,7 @@ SCRIPT="$HERE/../plasmoid/org.mat.cursormeter/contents/scripts/cursor-meter.sh"
 out=$(bash "$SCRIPT" 2>/dev/null) || exit 0
 printf '%s' "$out" | jq -r '
   if .ok != true then empty
-  else "Cursor total \(.total_pct)% · Auto \(.five.pct)% · API \(.seven.pct)%"
+  else "Cursor allowance \(.total_pct)% · Models \(.five.pct)% · Other \(.seven.pct)%"
+       + (if .grok == null then "" else " · Grok \(.grok.pct)%" end)
   end
 '

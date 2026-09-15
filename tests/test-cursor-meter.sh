@@ -36,12 +36,14 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 got=$(CURSOR_METER_USAGE_JSON="$FIX/usage-live.json" \
+      CURSOR_METER_SAND_JSON="$FIX/sand-live.json" \
       CURSOR_METER_PLAN_JSON="$FIX/plan.json" \
       CURSOR_METER_CACHE="$TMP/cache-live.json" \
       CURSOR_CONFIG_HOME="$TMP/no-auth" \
       run_meter)
 assert_jq "$got" '.ok == true and .source == "live"' "live fixture ok/source"
-assert_jq "$got" '.five.pct == 9 and .seven.pct == 1 and .total_pct == 8' "live fixture percents"
+assert_jq "$got" '.five.pct == 1 and .seven.pct == 0 and .total_pct == 8' "live fixture percents from display messages"
+assert_jq "$got" '.grok.pct == 13 and .grok.week_sec == 604800' "live fixture grok weekly"
 assert_jq "$got" '.plan == "Pro" and .cycle_sec == 2592000' "live fixture plan/cycle"
 
 now_ms=$(( $(date +%s) * 1000 ))
@@ -49,7 +51,10 @@ start_ms=$(( now_ms - 60000 ))
 end_ms=$(( start_ms + 2592000000 ))
 jq -n --argjson start "$start_ms" --argjson end "$end_ms" '{
   billingCycleStart: ($start|tostring), billingCycleEnd: ($end|tostring),
-  planUsage: { autoPercentUsed: 0, apiPercentUsed: 0, totalPercentUsed: 0 }
+  planUsage: { includedSpend: 0, limit: 2000, autoPercentUsed: 0, apiPercentUsed: 0, totalPercentUsed: 0 },
+  displayMessage: "You''ve used 0% of your included usage",
+  autoModelSelectedDisplayMessage: "You''ve used 0% of your included total usage",
+  namedModelSelectedDisplayMessage: "You''ve used 0% of your included API usage"
 }' > "$TMP/usage-fresh-now.json"
 got=$(CURSOR_METER_USAGE_JSON="$TMP/usage-fresh-now.json" \
       CURSOR_METER_PLAN_JSON="$FIX/plan.json" \

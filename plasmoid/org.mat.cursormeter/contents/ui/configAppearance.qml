@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls as QQC2
+import QtQuick.Layouts
 import org.kde.kcmutils as KCM
 import org.kde.kirigami as Kirigami
 
@@ -7,6 +8,7 @@ KCM.SimpleKCM {
     property alias cfg_showIcon: showIcon.checked
     property alias cfg_monochromeIcon: monochromeIcon.checked
     property alias cfg_showWindowLabels: showWindowLabels.checked
+    property alias cfg_panelBars: panelBars.currentIndex
 
     Kirigami.FormLayout {
         anchors.left: parent.left
@@ -26,7 +28,26 @@ KCM.SimpleKCM {
 
         QQC2.CheckBox {
             id: showWindowLabels
-            text: i18n("Show the \"Auto\" and \"API\" labels")
+            text: i18n("Show the window labels (\"Models\", \"Other\", \"Grok\")")
+        }
+
+        Item { Kirigami.FormData.isSection: true }
+
+        QQC2.ComboBox {
+            id: panelBars
+            Kirigami.FormData.label: i18n("Bars in the panel:")
+            model: [
+                i18n("Models and Other"),
+                i18n("Models, Other and Grok Bot"),
+                i18n("Models and Grok Bot")
+            ]
+        }
+
+        QQC2.Label {
+            Layout.fillWidth: true
+            opacity: 0.7
+            wrapMode: Text.WordWrap
+            text: i18n("The Grok Bot bar only appears when your plan includes it. The hover and the popup always show every pool.")
         }
     }
 }

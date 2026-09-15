@@ -1,6 +1,6 @@
 /*
  * Cursor Meter — KDE Plasma 6 applet
- * Two capsule bars: Auto + Composer and named-model API usage in the current billing cycle.
+ * Three capsule bars: monthly Models/Other pools plus Grok Bot weekly usage.
  */
 
 import QtQuick
@@ -16,6 +16,11 @@ PlasmoidItem {
 
     property var  data5:    ({ pct: 0, reset_in: null, fresh: false })
     property var  data7:    ({ pct: 0, reset_in: null, fresh: false })
+    property var  dataGrok: null
+    readonly property bool haveGrok: haveData && dataGrok !== null
+    // 0 = Models + Other, 1 = Models + Other + Grok, 2 = Models + Grok
+    readonly property bool panelShowOther: Plasmoid.configuration.panelBars !== 2
+    readonly property bool panelShowGrok: haveGrok && Plasmoid.configuration.panelBars !== 0
     property bool haveData: false
     property int  ageSec:   0
     property string source:  ""
@@ -132,10 +137,12 @@ PlasmoidItem {
     }
 
     function tipText() {
-        return "total  " + totalPct + "%\n"
-            + lineFor("Auto", data5, cycleSec) + "\n"
-            + lineFor("API", data7, cycleSec) + "\n"
-            + sourceText()
+        var s = "included  " + totalPct + "% of monthly allowance\n"
+            + lineFor("Models", data5, cycleSec) + "\n"
+            + lineFor("Other", data7, cycleSec)
+        if (haveGrok)
+            s += "\n" + lineFor("Grok", dataGrok, dataGrok.week_sec || 604800)
+        return s + "\n" + sourceText()
     }
 
     Plasma5Support.DataSource {
@@ -152,6 +159,7 @@ PlasmoidItem {
                 if (j && j.ok) {
                     root.data5     = j.five
                     root.data7     = j.seven
+                    root.dataGrok  = j.grok || null
                     root.ageSec    = j.age || 0
                     root.source    = j.source || ""
                     root.plan      = j.plan || ""
@@ -188,9 +196,12 @@ PlasmoidItem {
         property bool   stale: false
         property bool   justReset: false
         property bool   showValue: true
+        property real   labelWidth: -1
+        readonly property real labelImplicitWidth: labelItem.visible ? labelItem.implicitWidth : 0
 
         implicitHeight: Kirigami.Units.gridUnit
         implicitWidth:  Kirigami.Units.gridUnit * 6
+        Layout.minimumHeight: 4
 
         readonly property real  v: Math.max(0, Math.min(100, value))
         readonly property color fillColor: mb.stale
@@ -202,12 +213,16 @@ PlasmoidItem {
             spacing: Kirigami.Units.smallSpacing
 
             PlasmaComponents.Label {
+                id: labelItem
                 text: mb.label
                 visible: mb.label.length > 0
                 font.pixelSize: Math.max(8, mb.height * 0.62)
                 font.bold: true
                 opacity: 0.6
-                Layout.preferredWidth: mb.label.length > 0 ? Kirigami.Units.gridUnit * 1.2 : 0
+                Layout.minimumHeight: 0
+                Layout.fillHeight: true
+                Layout.preferredWidth: mb.label.length === 0 ? 0
+                    : mb.labelWidth >= 0 ? mb.labelWidth : Kirigami.Units.gridUnit * 0.95
                 horizontalAlignment: Text.AlignLeft
                 verticalAlignment: Text.AlignVCenter
             }
@@ -216,6 +231,7 @@ PlasmoidItem {
                 id: track
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.minimumHeight: 0
                 Layout.maximumHeight: Kirigami.Units.gridUnit * 0.9
                 Layout.alignment: Qt.AlignVCenter
                 radius: height / 2
@@ -269,6 +285,8 @@ PlasmoidItem {
                 font.pixelSize: Math.max(8, mb.height * 0.58)
                 font.bold: true
                 color: mb.active ? mb.fillColor : Qt.rgba(0.6, 0.6, 0.6, 1)
+                Layout.minimumHeight: 0
+                Layout.fillHeight: true
                 Layout.preferredWidth: mb.showValue ? Kirigami.Units.gridUnit * 1.7 : 0
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
@@ -289,7 +307,7 @@ PlasmoidItem {
             id: contentRow
             anchors.centerIn: parent
             height: Math.min(parent.height - Kirigami.Units.smallSpacing,
-                             Kirigami.Units.gridUnit * 2.3)
+                             Kirigami.Units.gridUnit * (barsCol.barCount === 3 ? 3.3 : 2.3))
             spacing: Kirigami.Units.smallSpacing
 
             Kirigami.Icon {
@@ -309,14 +327,19 @@ PlasmoidItem {
                 id: barsCol
                 Layout.preferredWidth: Kirigami.Units.gridUnit * 6
                 Layout.fillHeight: true
-                spacing: Kirigami.Units.smallSpacing
+                spacing: barCount === 3 ? 2 : Kirigami.Units.smallSpacing
                 opacity: root.stale ? 0.5 : 1.0
                 Behavior on opacity { NumberAnimation { duration: 400 } }
+                readonly property int barCount: 1 + (root.panelShowOther ? 1 : 0) + (root.panelShowGrok ? 1 : 0)
+                readonly property real labelW: Math.max(barModels.labelImplicitWidth, barOther.labelImplicitWidth,
+                                                        barGrok.labelImplicitWidth, Kirigami.Units.gridUnit * 0.95)
 
                 MeterBar {
+                    id: barModels
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    label: Plasmoid.configuration.showWindowLabels ? "Auto" : ""
+                    labelWidth: barsCol.labelW
+                    label: Plasmoid.configuration.showWindowLabels ? "Models" : ""
                     active: root.haveData
                     stale: root.stale
                     value: root.data5.pct
@@ -325,15 +348,32 @@ PlasmoidItem {
                                && root.data5.reset_in !== null && root.data5.reset_in <= 0
                 }
                 MeterBar {
+                    id: barOther
+                    visible: root.panelShowOther
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    label: Plasmoid.configuration.showWindowLabels ? "API" : ""
+                    labelWidth: barsCol.labelW
+                    label: Plasmoid.configuration.showWindowLabels ? "Other" : ""
                     active: root.haveData
                     stale: root.stale
                     value: root.data7.pct
                     timePct: root.timePctOf(root.data7.reset_in, root.cycleSec)
                     justReset: root.haveData && !root.data7.fresh
                                && root.data7.reset_in !== null && root.data7.reset_in <= 0
+                }
+                MeterBar {
+                    id: barGrok
+                    visible: root.panelShowGrok
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    labelWidth: barsCol.labelW
+                    label: Plasmoid.configuration.showWindowLabels ? "Grok" : ""
+                    active: root.panelShowGrok
+                    stale: root.stale
+                    value: root.dataGrok.pct
+                    timePct: root.timePctOf(root.dataGrok.reset_in, root.dataGrok.week_sec || 604800)
+                    justReset: root.panelShowGrok && !root.dataGrok.fresh
+                               && root.dataGrok.reset_in !== null && root.dataGrok.reset_in <= 0
                 }
             }
 
@@ -410,9 +450,9 @@ PlasmoidItem {
 
     fullRepresentation: Item {
         Layout.minimumWidth:  Kirigami.Units.gridUnit * 18
-        Layout.minimumHeight: Kirigami.Units.gridUnit * 12
+        Layout.minimumHeight: root.haveGrok ? Kirigami.Units.gridUnit * 15 : Kirigami.Units.gridUnit * 12
         Layout.preferredWidth:  Kirigami.Units.gridUnit * 20
-        Layout.preferredHeight: Kirigami.Units.gridUnit * 13
+        Layout.preferredHeight: root.haveGrok ? Kirigami.Units.gridUnit * 16 : Kirigami.Units.gridUnit * 13
 
         ColumnLayout {
             anchors.fill: parent
@@ -437,7 +477,7 @@ PlasmoidItem {
                     }
                     PlasmaComponents.Label {
                         text: root.plan !== ""
-                            ? "included usage · " + root.plan + " · total " + root.totalPct + "%"
+                            ? "included usage · " + root.plan + " · allowance " + root.totalPct + "%"
                             : "included usage"
                         opacity: 0.6
                         font.pixelSize: Kirigami.Units.gridUnit * 0.72
@@ -447,17 +487,25 @@ PlasmoidItem {
             }
 
             WindowBlock {
-                title: "Auto + Composer"
+                title: "Cursor, Grok and Composer"
                 d: root.data5
                 active: root.haveData
                 windowSec: root.cycleSec
             }
 
             WindowBlock {
-                title: "Named models"
+                title: "Other models"
                 d: root.data7
                 active: root.haveData
                 windowSec: root.cycleSec
+            }
+
+            WindowBlock {
+                visible: root.haveGrok
+                title: "Grok Bot (weekly)"
+                d: root.dataGrok
+                active: root.haveGrok
+                windowSec: root.dataGrok.week_sec || 604800
             }
 
             Item { Layout.fillHeight: true }

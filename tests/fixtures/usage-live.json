@@ -2,12 +2,15 @@
   "billingCycleStart": "1789501117000",
   "billingCycleEnd": "1792093117000",
   "planUsage": {
-    "totalSpend": 40,
-    "includedSpend": 40,
-    "remaining": 1960,
+    "totalSpend": 154,
+    "includedSpend": 154,
+    "remaining": 1846,
     "limit": 2000,
-    "autoPercentUsed": 0.09,
-    "apiPercentUsed": 0.01,
-    "totalPercentUsed": 0.08
-  }
+    "autoPercentUsed": 0.3422222222222222,
+    "apiPercentUsed": 0,
+    "totalPercentUsed": 0.3259259259259259
+  },
+  "displayMessage": "You've used 8% of your included usage",
+  "autoModelSelectedDisplayMessage": "You've used 1% of your included total usage",
+  "namedModelSelectedDisplayMessage": "You've used 0% of your included API usage"
 }

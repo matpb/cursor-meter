@@ -1,14 +1,30 @@
 # Cursor Meter
 
-A KDE Plasma panel widget that shows your **live Cursor plan usage** as two compact bars, colored by
+A KDE Plasma panel widget that shows your **live Cursor plan usage** as compact bars, colored by
 how you're tracking against the clock.
 
 <img src="docs/panel.png" alt="Cursor Meter in the panel" width="360">
 
-Cursor meters **included usage** on a monthly billing cycle. The bars are:
+Cursor meters **included usage** on a monthly billing cycle. The bars match the
+[Spending page](https://cursor.com/dashboard/spending):
 
-- **Auto** — Auto + Composer models (`autoPercentUsed`)
-- **API** — named models you pick explicitly (`apiPercentUsed`)
+- **Models** — "Includes Cursor, Grok and Composer" (`autoModelSelectedDisplayMessage`, monthly)
+- **Other** — "Other Models" (`namedModelSelectedDisplayMessage`, monthly)
+- **Grok** — Grok Bot weekly pool (`GetSandUsageStatus`, resets every 7 days)
+
+Hovering also shows **included allowance** — the dollar-weighted total from `displayMessage`
+(`includedSpend ÷ limit`). That number is usually higher than the Models bar alone because it counts
+usage across every pool in your monthly allowance, not just the Cursor/Grok/Composer slice.
+
+### The Grok Bot bar
+
+Plans with a Grok Bot weekly pool get a third window. It is always in the hover text and the popup.
+In the panel it is off by default so the widget stays two bars tall; turn it on in **Configure →
+Appearance → Bars in the panel** to get three bars, or swap the Other bar for Grok:
+
+<img src="docs/panel-grok.png" alt="Cursor Meter with the Grok Bot bar" width="360">
+
+It reads `GetSandUsageStatus`, so it follows whatever weekly pool Cursor exposes next.
 
 It reads your usage from the same dashboard endpoint the Cursor app uses, with the token Cursor
 already put on your disk after you sign in. No browser, no cookies, no keyring. Always fresh, counts
@@ -34,7 +50,7 @@ Each bar packs four signals:
 | Element | Meaning |
 |---|---|
 | **Fill length** | How much of that bucket you've used (`14%`). |
-| **Vertical tick** | How far *through the billing cycle by time* you are. Fill **left** of the tick = under pace; fill **right** = burning fast. Both bars share the same monthly clock. |
+| **Vertical tick** | How far *through that window by time* you are. Fill **left** of the tick = under pace; fill **right** = burning fast. Models and Other share the monthly clock; Grok has its own weekly clock. |
 | **Color** | Pace, not raw usage: **green** = comfortably under, **yellow** = right on the clock, **red** = ahead of the clock. |
 | **↺ marker** | The cycle just reset — the live number may still be catching up. |
 
@@ -82,8 +98,9 @@ No configuration needed.
 1. Every ~90 seconds the widget runs its bundled reader (`contents/scripts/cursor-meter.sh`).
 2. The reader takes the access token from `~/.config/cursor/auth.json` (written by `cursor-agent
    login`) or, if that's missing, `cursorAuth/accessToken` in the IDE's `state.vscdb`.
-3. It calls `https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` (the same
-   dashboard the app reads) and turns the Auto and API buckets into the bars.
+3. It calls `GetCurrentPeriodUsage` for the two monthly pools and `GetSandUsageStatus` for Grok Bot
+   weekly usage, parsing the `*DisplayMessage` strings (and `usagePercent` for Grok). The raw
+   `*PercentUsed` floats in the monthly response are internal metrics and do **not** match the web UI.
 4. If the token has expired or the network is down, it falls back to the last successful live read
    cached at `~/.config/cursor-meter/last.json`.
 
@@ -113,7 +130,7 @@ refresh the token itself — writing to `auth.json` would race with the CLI, whi
 `extras/statusline.sh` prints a compact summary for shell hooks:
 
 ```
-Cursor total 8% · Auto 9% · API 1%
+Cursor allowance 14% · Models 1% · Other 0% · Grok 13%
 ```
 
 ## Options
@@ -124,7 +141,8 @@ Right-click the widget → **Configure Cursor Meter…** → **Appearance**:
 |---|---|---|
 | **Show the Cursor icon** | on | Puts the Cursor mark in front of the bars. |
 | **Tint it to match the panel** | off | Renders the mark in your panel's text colour instead of the brand colour. |
-| **Show the "Auto" and "API" labels** | on | Turn off to reclaim panel width once the icon makes it obvious which widget is which. |
+| **Show the window labels** | on | Turn off to reclaim panel width once the icon makes it obvious which widget is which. |
+| **Bars in the panel** | Models and Other | Pick two or three bars: monthly pools only, all three pools, or Models + Grok Bot. The popup always shows every pool. |
 
 ## Uninstall
 
